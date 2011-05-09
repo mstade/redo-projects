@@ -1,0 +1,25 @@
+redo-ifchange configuration
+source configuration
+
+parseconf
+
+cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+    <name>$name</name>
+    <comment></comment>
+    <projects>
+    </projects>
+    <buildSpec>
+        <buildCommand>
+            <name>com.adobe.flexbuilder.project.flexbuilder</name>
+            <arguments>
+            </arguments>
+        </buildCommand>
+    </buildSpec>
+    <natures>
+        <nature>com.adobe.flexbuilder.project.flexlibnature</nature>
+        <nature>com.adobe.flexbuilder.project.actionscriptnature</nature>
+    </natures>
+</projectDescription>
+EOF
