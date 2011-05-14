@@ -1,8 +1,8 @@
-exec > $3
+exec > "$3"
 
-cat<<EOF
+cat<<'EOF'
 # Name of the ignore file for your scm
-scmignore=".gitignore"
+ignorefile=".gitignore"
 
 # Name of project config file
 project="project.conf"
@@ -11,78 +11,96 @@ project="project.conf"
 timeout=10
 
 # The base url to use for grabbing project scripts
-baseurl="https://github.com/mstade/redo-projects/raw/master"
+projects="https://github.com/mstade/redo-projects/raw/master"
+
+# Url to yaml2sh
+yaml2sh="https://github.com/mstade/shelp/raw/master/yaml2sh"
 
 
-#### Generated functions ###################################
+############################################################
 
 ignore() {
-    if [ -e "\$scmignore" ]
+    if [ -e "$ignorefile" ]
     then
-        if [ \$(egrep -c "/^\$1$/" "\$scmignore") == 0 ]
-        then
-            echo "\$1" >> "\$scmignore"
-        fi
+        while read line
+        do
+            [ "$line" == "$@" ] && return
+        done < "$ignorefile"
+
+        echo "$@" >> "$ignorefile"
     fi
 }
 
 autoclean() {
-    if [ -e clean.do ]
+
+    if [ ! -e clean.do ]
     then
-        if [ \$(egrep -c "/redo \$1.clean$/" clean.do) == 0 ]
-        then
-            echo "\$(echo "[ -e \$1 ] && redo \$1.clean" | cat - clean.do)" > clean.do
-            ignore \$1
-        fi
-    else
-        echo "rm -rf *.redo*.tmp" >> clean.do
-        echo "rm -rf default.clean.do" >> clean.do
+        echo "exec 2> /dev/null" > clean.do
+        echo "rm -rf *.tmp" >> clean.do
         echo "rm -rf clean.do" >> clean.do
-        
-        if [ ! -e default.clean.do ]
-        then
-            echo "rm -rf \\\$1 2> /dev/null" > default.clean.do
-        fi
-
-        ignore clean.do
-        ignore default.clean.do
-
-        autoclean \$1
     fi
+    
+    target="rm -rf $@"
+
+    while read line
+    do
+        [ "$line" == "$target" ] && return
+    done < clean.do
+
+    echo $target >> clean.do
+    ignore "$@"
 }
 
 info() {
-    printf "\e[1;34m# \e[1;30m"
-    "\$@"
+    eval "$@" | while read line
+    do
+        printf "\e[1;36m#\e[1;30m %s" "$line"
+        echo
+    done
+
     printf "\e[m"
 }
 
+input() {
+    if [ -z "$2" ]
+    then
+        error "Input variable must be specified as second argument"
+    fi
+
+    if [ ! -z "$3" ]
+    then
+        default=" [$3]"
+    fi
+
+    printf "\e[1;35m#\e[1;30m $1$default: \e[m" >&2
+    read "$2" >&2
+
+    if [ -z "$2" ]
+    then
+        "$2"="$default"
+    fi
+}
+
 error() {
-    printf "\e[1;31m"
-    echo "# \$@"
-    printf "\e[m"
+    printf "\e[1;31m# " >&2
+    echo "$@" >&2
+    printf "\e[m" >&2
     exit 1
 }
 
 download() {
-    for source in "\$1"
+    for source in "$1"
     do
-        target="\${2:-\${source##*/}}"
+        target="${2:-${source##*/}}"
 
-        local="\${source##\$baseurl/}"
+        local="${source##$projects/}"
 
-        if [ -e "\$local" ]
+        if [ -e "$local" ]
         then
-            ln -s "\$local" "\$target"
+            ln -s "$local" "$target"
         else
-            info echo "Download \$source => \$target"
-            curl --connect-timeout "\$timeout" --create-dir -#fSLko "\$target" "\$source"
-        fi
-        
-        if [ "$3" != "noclean" ]
-        then
-            ignore "\$target"
-            autoclean "\$target"
+            info echo "Download $source => $target" >&2
+            curl --connect-timeout "$timeout" --create-dir -#fSLko "$target" "$source" >&2
         fi
     done
 }
@@ -90,48 +108,34 @@ download() {
 parseconf() {
     if [ ! -e yaml2sh ]
     then
-        download "https://github.com/mstade/shelp/raw/master/yaml2sh"
+        download "$yaml2sh" && autoclean yaml2sh
         chmod +x yaml2sh
     fi
 
-    if [ -e "\$project" ]
+    if [ -e "$project" ]
     then
-        eval "\$(./yaml2sh \$project)"
+        eval "$(./yaml2sh $project)"
     else
-        error "Project configuration does not exist"
+        if [ -e "project.do" ]
+        then
+            error "No project configuration, please \'redo project\'"
+        else
+            error "No project specified, please \'redo configuration\'"
+        fi
     fi
 }
 EOF
 
-source "$3"
-autoclean configuration
+. "$3"
+autoclean "$1$2" 
 
 if [ ! -e project.do ]
 then
-    echo "$(cat <<EOF
-        exec >&2
+    while [ -z "$type" ]
+    do
+        input "Project template" type
+    done
 
-        if [ ! -e configuration ]
-        then
-            error "Can't find configuration, please 'redo configuration'"
-        fi
-        
-        source configuration
-        [ -e "\$project" ] && parseconf
-
-        while [ -z "\$type" ]
-        do
-            read -p "# Project template: " type
-        done
-
-        download "\$baseurl/\$type/project.do"
-
-        rm setup.do
-        redo project
-    )" > setup.do
-
-    ignore setup.do
-    autoclean setup.do
-
-    info echo "Configuration complete, please 'redo setup'" >&2
+    download "$projects/$type/project.do"
+    info echo "Ready to \'redo project\'" >&2
 fi
